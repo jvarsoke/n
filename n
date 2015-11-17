@@ -1,0 +1,119 @@
+#!/usr/bin/perl -w
+# n - a simple command line "read next" for linux
+# by jvarsoke
+use Cwd;
+
+my $STATE_FILE= "$ENV{HOME}/.n.tmp";
+my $PAGER = "$ENV{PAGER}";
+my $States;
+
+my $HEADER = <<'HEADER';
+# Temporary file for "n" program by jvarsoke
+# Format: path filename
+#
+HEADER
+
+main();
+
+sub main {
+    my $n = shift @ARGV;
+    my $reverse = ($n eq "-p");
+    my ($p, $c) = ();
+    my $current = read_current_state ($STATE_FILE, cwd());
+    if ($reverse || !$n) {
+        ($p, $c, $n) = get_next(cwd(), $current, 1);
+    }
+    if (!$reverse) {
+        write_current_state ($STATE_FILE, cwd(), $n);
+        exec "$PAGER $n";
+    } else {
+        write_current_state ($STATE_FILE, cwd(), $p);
+        exec "$PAGER $p";
+    }
+}
+
+sub read_current_state ($$) {
+    my $state_file = shift;
+    my $current = shift;
+
+    if ( -e $state_file ) {
+        my ($path, $last_file);
+
+        open (STATES, $state_file) || die ("Something wrong with $state_file\n");
+
+        foreach (<STATES>) {
+            chomp;
+            if (/^[^#]/) {
+                ($path, $last_file) = split;
+                $States{$path} = $last_file;
+            }
+        }
+        close STATES;
+    } else {
+        print "No current N -- starting from beginning.\n";
+    }
+    return $States{$current};
+}
+
+sub get_next ($$$) {
+    my $cwd = shift;
+    my $current = shift;
+    my $interval = shift;
+    my ($p, $c, $n) = (); 
+
+    my @files = ();
+    opendir my $dh, $cwd or die "Couldn't open CWD: $cwd\n";
+    my @allfiles = readdir $dh;
+    foreach (@allfiles) {
+        if (-f) { push @files, $_; }
+    }
+    closedir $dh;
+
+    @sorted = sort @files;
+
+    if (!$current) {
+       $n = $sorted[0];
+    }
+    else {
+        my $found = 0;
+        my $i = 0;
+        while (!$found && $i < $#sorted) {
+            print "$i) $sorted[$i] looking $current\n";
+            my $file = $sorted[$i];
+            if ($file eq $current) {
+                $found = 1;
+            }
+            else {
+                $i++;
+            }
+        }
+
+        if ($found) {
+            $p = $sorted[$i-1];
+            $c = $sorted[$i];
+            $n = $sorted[$i+1];
+        }
+        else {
+            $n = $sorted[0];
+        }
+    }
+
+    #print "p = $p\nc = $c\nn = $n\n";
+
+    return ($p, $c, $n);
+}
+
+sub write_current_state ($$$) {
+    my $state_file = shift;
+    my $cwd = shift;
+    my $current = shift;
+
+    open (STATE_FILE, ">$STATE_FILE")
+        or die ("Couldn't open $STATE_FILE to save state.\n");
+    print STATE_FILE $HEADER;
+    $States{$cwd} = $current;
+    foreach (sort keys %States) {
+        print STATE_FILE "$_ $States{$_}\n";
+    }
+    close (STATE_FILE);
+}
